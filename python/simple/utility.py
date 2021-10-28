@@ -43,9 +43,11 @@ def get_nearest_city_tile(unit_pos: Position, city: City) -> CityTile:
     return nearest_tile
 
 
-def get_nearest_cell(pos: Position, game_state: Game, condition) -> Optional[Cell]:
+def get_nearest_cell(pos: Position, game_state: Game, occupied_tiles: List[Position], condition) -> Optional[Cell]:
     def empty(cell: Cell) -> bool:
-        return condition(cell)
+        if cell.pos in occupied_tiles or not condition(cell):
+            return False
+        return True
 
     cell = game_state.map.get_cell_by_pos(pos)
     if empty(cell):
@@ -62,12 +64,12 @@ def get_nearest_cell(pos: Position, game_state: Game, condition) -> Optional[Cel
     return None
 
 
-def get_nearest_unoccupied_cell(pos: Position, game_state: Game) -> Optional[Cell]:
-    return get_nearest_cell(pos, game_state, condition = lambda cell: not cell.citytile and not cell.has_resource())
+def get_nearest_unoccupied_cell(pos: Position, game_state: Game, occupied_tiles: List[Position]) -> Optional[Cell]:
+    return get_nearest_cell(pos, game_state, occupied_tiles, condition = lambda cell: not cell.citytile and not cell.has_resource())
 
 
-def get_nearest_non_city(pos: Position, game_state: Game) -> Optional[Cell]:
-    return get_nearest_cell(pos, game_state, condition = lambda cell: not cell.citytile)
+def get_nearest_non_city(pos: Position, game_state: Game, occupied_tiles: List[Position]) -> Optional[Cell]:
+    return get_nearest_cell(pos, game_state, occupied_tiles, condition = lambda cell: not cell.citytile)
 
 
 def in_map(pos: Position, game_state):

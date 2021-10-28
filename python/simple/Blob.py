@@ -35,6 +35,7 @@ class Blob:
         self.actions: List = None
         self.game_state: Game = None
         self.resource_tiles: List[Cell] = None
+        self.occupied_tiles: List[Position] = None
 
         self.previous_actions = deque([], maxlen=3)
         self.mission: Optional[str] = None
@@ -43,13 +44,14 @@ class Blob:
     def wood(self):
         return self.unit.cargo.wood
 
-    def update(self, unit: Unit, player: Player, actions: List, game_state: Game, resource_tiles: List[Cell]):
+    def update(self, unit: Unit, player: Player, actions: List, game_state: Game, resource_tiles: List[Cell], occupied_tiles: List[Position]):
         """Updates with the new turn info"""
         self.unit = unit
         self.player = player
         self.actions = actions
         self.game_state = game_state
         self.resource_tiles = resource_tiles
+        self.occupied_tiles = occupied_tiles
 
     def do_action(self, action):
         """Adds action to actions list, and updates internal store of actions"""
@@ -63,6 +65,10 @@ class Blob:
 
     def play(self):
         """Decides best action based on current state and adds it to actions"""
+        build_thresh = 5
+        immediate_fuel_thresh = 3
+        min_wood_thresh = 30
+
         low_city = lowest_city(self.player.cities)
         if low_city:
             self.actions.append(annotate.sidetext(f'Low-city:{low_city.cityid}:{time_left(low_city):.2f}'))
@@ -72,14 +78,13 @@ class Blob:
             dist = 0
             tl = np.inf
         if self.unit.is_worker() and self.unit.can_act():
-            if self.wood == 100 and tl > dist+3:
-                self.log("Building")
+            if self.wood == 100 and tl > dist+build_thresh:
                 self.build_city()
-            elif self.wood > 30 and tl < dist+1 and low_city:
+            elif self.wood > min_wood_thresh and tl < dist+immediate_fuel_thresh and low_city:
                 self.log("Fuelling_low_city")
                 self.go_to_city(low_city)
             elif self.unit.get_cargo_space_left() > 0:
-                self.log("Getting?")
+                self.log("Getting")
                 self.get_resources()
             else:
                 self.log("Emptying")
@@ -98,35 +103,34 @@ class Blob:
         return self.do_action(action)
 
     def build_city(self):
-        action = build_city(self.unit, self.game_state, log=lambda x: self.log(x))
-        return self.do_action(action)
+        if self.unit.can_build(self.game_state.map):
+            self.log('BUILDING')
+            self.do_action(self.unit.build_city())
+        else:
+            unit = self.unit
+            game_state = self.game_state
+            target_cell = get_nearest_unoccupied_cell(unit.pos, game_state, self.occupied_tiles)
+            if target_cell:
+                pos_target = unit.pos.translate(unit.pos.direction_to(target_cell.pos), 1)
+                cell_target = game_state.map.get_cell_by_pos(pos_target)
+                if cell_target.citytile:
+                    self.log('AVOIDING')
+                    self.move(random_direction())
+                else:
+                    self.log('Moving-to-build')
+                    self.move(unit.pos.direction_to(target_cell.pos))
+            else:
+                self.log('STUCK')
 
-    def move(self, diretion):
-        return self.do_action(self.unit.move(diretion))
+    def move(self, direction):
+        new_pos = self.unit.pos.translate(direction, 1)
+        logging.info(f'{self.unit.id} moving to {new_pos}')
+        self.occupied_tiles.append(new_pos)
+        return self.do_action(self.unit.move(direction))
 
     def go_to_city(self, city: City):
         return self.move(self.unit.pos.direction_to(get_nearest_city_tile(self.unit.pos, city).pos))
 
-
-def build_city(unit: Unit, game_state: Game, log=None) -> str:
-    action = None
-    if unit.can_build(game_state.map):
-        if log:
-            log('BUILDING')
-        action = unit.build_city()
-    else:
-        target_cell = get_nearest_unoccupied_cell(unit.pos, game_state)
-        pos_target = unit.pos.translate(unit.pos.direction_to(target_cell.pos), 1)
-        cell_target = game_state.map.get_cell_by_pos(pos_target)
-        if cell_target.citytile:
-            if log:
-                log('AVOIDING')
-            action = unit.move(random_direction())
-        else:
-            if log:
-                log('Moving-to-build')
-            action = unit.move(unit.pos.direction_to(target_cell.pos))
-    return action
 
 
 def get_resources(unit, player, resource_tiles) -> str:

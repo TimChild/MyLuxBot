@@ -12,6 +12,7 @@ from lux.game_objects import Player, Unit, City, Position, CityTile
 
 from Player import MyPlayer
 from Blob import Blob
+from City import MyCity
 
 import logging
 import numpy as np
@@ -26,6 +27,8 @@ game_state = None
 logging.info(f'RANDOM: {random.random()}\n')
 
 blobs = dict()
+cities = dict()
+
 
 def agent(observation, configuration):
     global game_state
@@ -49,6 +52,7 @@ def agent(observation, configuration):
     width, height = game_state.map.width, game_state.map.height
 
     resource_tiles: list[Cell] = []
+    occupied_tiles: List[Position] = []
     for y in range(height):
         for x in range(width):
             cell = game_state.map.get_cell(x, y)
@@ -62,8 +66,19 @@ def agent(observation, configuration):
             blobs[unit.id] = Blob()
         blob = blobs[unit.id]
 
-        blob.update(unit, player, actions, game_state, resource_tiles)
+        blob.update(unit, player, actions, game_state, resource_tiles, occupied_tiles)
         blob.play()
+
+    for city in player.cities.values():
+
+        if city.cityid not in cities:
+            logging.info(f'New city {city.cityid}')
+            cities[city.cityid] = MyCity()
+        my_city = cities[city.cityid]
+
+        my_city.update(city, player, actions, game_state, resource_tiles)
+        my_city.play()
+
     # you can add debug annotations using the functions in the annotate object
     # actions.append(annotate.circle(0, 0))
     return actions
