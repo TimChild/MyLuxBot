@@ -10,19 +10,24 @@ from lux.game_constants import GAME_CONSTANTS
 from lux import annotate
 from lux.game_objects import Player, Unit, City, Position, CityTile
 
+# from Player import MyPlayer
+# from Blob import Blob
+
 import logging
 import numpy as np
 from itertools import product
 import random
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
-logging.basicConfig(filename='logs/agent_v1.log', encoding='utf-8', level=logging.DEBUG, filemode='w')
+logging.basicConfig(filename='logs/agent_v1.log', level=logging.DEBUG, filemode='w')
 
 DIRECTIONS = Constants.DIRECTIONS
 DIRS = [DIRECTIONS.EAST, DIRECTIONS.NORTH, DIRECTIONS.WEST, DIRECTIONS.SOUTH]
 game_state = None
 
 logging.info(f'RANDOM: {random.random()}\n')
+
+
 def agent(observation, configuration):
     global game_state
 
@@ -41,7 +46,9 @@ def agent(observation, configuration):
     ### AI Code goes down here! ###
     logging.info(f'Player: {observation.player}, Turn: {game_state.turn}')
     player = game_state.players[observation.player]
+    # player = MyPlayer(player)
     opponent = game_state.players[(observation.player + 1) % 2]
+    # opponent = MyPlayer(opponent)
     width, height = game_state.map.width, game_state.map.height
 
     resource_tiles: list[Cell] = []
@@ -54,31 +61,13 @@ def agent(observation, configuration):
     # we iterate over all our units and do something with them
     for unit in player.units:
         if unit.is_worker() and unit.can_act():
-            logging.info(f'Wood = {unit.cargo.wood}')
-            low_city = lowest_city(player.cities)
-            if not low_city:
-                low_city = object()
-                low_city.cityid = 'NONE'
-                low_city.fuel = 100
-                low_city.light_upkeep = 1
-            logging.info(f'{low_city.cityid}:{low_city.fuel/low_city.light_upkeep}')
-            actions.append(annotate.sidetext(f'{low_city.cityid},{low_city.fuel}'))
-            if low_city.fuel > 1.5*low_city.light_upkeep and unit.cargo.wood >= 100:
-                actions.append(annotate.text(unit.pos.x, unit.pos.y, "Building"))
-                actions.append(build_city(unit, game_state))
-            elif unit.get_cargo_space_left() > 0:
+            if unit.get_cargo_space_left() > 0:
                 actions.append(annotate.text(unit.pos.x, unit.pos.y, "Getting"))
                 # if the unit is a worker and we have space in cargo, lets find the nearest resource tile and try to mine it
                 get_resources(unit, player, actions, resource_tiles)
-            elif low_city.fuel/low_city.light_upkeep < 1.5:
-                actions.append(annotate.text(unit.pos.x, unit.pos.y, "LOW"))
-                actions.append(go_to_city(unit, low_city))
             else:
-                actions.append(go_to_city(unit, low_city))
-                # actions.append(annotate.text(unit.pos.x, unit.pos.y, "Returning"))
-                # # if unit is a worker and there is no cargo space left, and we have cities, lets return to them
-                # return_to_city(unit, player, actions)
-
+                # # if self is a worker and there is no cargo space left, and we have cities, lets return to them
+                return_to_city(unit, player, actions)
 
 
     # you can add debug annotations using the functions in the annotate object
