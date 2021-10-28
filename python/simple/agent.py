@@ -25,6 +25,7 @@ game_state = None
 
 logging.info(f'RANDOM: {random.random()}\n')
 
+blobs = dict()
 
 def agent(observation, configuration):
     global game_state
@@ -44,9 +45,7 @@ def agent(observation, configuration):
     ### AI Code goes down here! ###
     logging.info(f'Player: {observation.player}, Turn: {game_state.turn}')
     player = game_state.players[observation.player]
-    # player = MyPlayer(player)
     opponent = game_state.players[(observation.player + 1) % 2]
-    # opponent = MyPlayer(opponent)
     width, height = game_state.map.width, game_state.map.height
 
     resource_tiles: list[Cell] = []
@@ -58,17 +57,13 @@ def agent(observation, configuration):
 
     # we iterate over all our units and do something with them
     for unit in player.units:
-        blob = Blob(unit, player, actions, game_state, resource_tiles)
-        if unit.is_worker() and unit.can_act():
-            if unit.get_cargo_space_left() > 0:
-                actions.append(annotate.text(unit.pos.x, unit.pos.y, "Getting"))
-                # if the unit is a worker and we have space in cargo, lets find the nearest resource tile and try to mine it
-                blob.get_resources()
-            else:
-                # # if self is a worker and there is no cargo space left, and we have cities, lets return to them
-                blob.return_to_city()
+        if unit.id not in blobs:
+            logging.info(f'New unit {unit.id}')
+            blobs[unit.id] = Blob()
+        blob = blobs[unit.id]
 
-
+        blob.update(unit, player, actions, game_state, resource_tiles)
+        blob.play()
     # you can add debug annotations using the functions in the annotate object
     # actions.append(annotate.circle(0, 0))
     return actions

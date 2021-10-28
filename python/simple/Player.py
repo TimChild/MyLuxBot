@@ -20,9 +20,8 @@ DIRECTIONS = Constants.DIRECTIONS
 DIRS = [DIRECTIONS.EAST, DIRECTIONS.NORTH, DIRECTIONS.WEST, DIRECTIONS.SOUTH]
 
 
-class MyPlayer(Player):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.units = Blob(self.units)
+class MyPlayer:
+    def __init__(self, player: Player):
+        self.player = player
 
 

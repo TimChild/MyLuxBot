@@ -7,9 +7,10 @@ from lux import annotate
 from lux.game_objects import Player, Unit, City, Position, CityTile
 
 
-from utility import lowest_city, get_nearest_non_city, get_nearest_city_tile, get_nearest_unoccupied, get_nearest_city, \
-    get_nearest_cell, random_direction
+from utility import lowest_city, get_nearest_non_city, get_nearest_city_tile, get_nearest_unoccupied_cell, get_nearest_city, \
+    get_nearest_cell, random_direction, time_left, distance_between
 
+from collections import deque
 import logging
 import math
 import numpy as np
@@ -19,7 +20,8 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from Player import MyPlayer
-logging.basicConfig(filename='logs/agent_v1.log', level=logging.DEBUG, filemode='w')
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 DIRECTIONS = Constants.DIRECTIONS
@@ -27,50 +29,108 @@ DIRS = [DIRECTIONS.EAST, DIRECTIONS.NORTH, DIRECTIONS.WEST, DIRECTIONS.SOUTH]
 
 
 class Blob:
-    def __init__(self, unit: Unit, player: MyPlayer, actions: List, game_state: Game, resource_tiles: List[Cell]):
+    def __init__(self):
+        self.unit: Unit = None
+        self.player: Player = None
+        self.actions: List = None
+        self.game_state: Game = None
+        self.resource_tiles: List[Cell] = None
+
+        self.previous_actions = deque([], maxlen=3)
+        self.mission: Optional[str] = None
+
+    @property
+    def wood(self):
+        return self.unit.cargo.wood
+
+    def update(self, unit: Unit, player: Player, actions: List, game_state: Game, resource_tiles: List[Cell]):
+        """Updates with the new turn info"""
         self.unit = unit
         self.player = player
         self.actions = actions
         self.game_state = game_state
         self.resource_tiles = resource_tiles
 
+    def do_action(self, action):
+        """Adds action to actions list, and updates internal store of actions"""
+        if action:
+            self.actions.append(action)
+            self.previous_actions.append(action)
+
+    def log(self, message:str):
+        logger.info(f'Blob-{self.unit.id}-{message}')
+        self.actions.append(annotate.text(self.unit.pos.x, self.unit.pos.y, message, 26))
+
+    def play(self):
+        """Decides best action based on current state and adds it to actions"""
+        low_city = lowest_city(self.player.cities)
+        if low_city:
+            self.actions.append(annotate.sidetext(f'Low-city:{low_city.cityid}:{time_left(low_city):.2f}'))
+            dist = distance_between(self.unit.pos, get_nearest_city_tile(self.unit.pos, low_city).pos)
+            tl = time_left(low_city)
+        else:
+            dist = 0
+            tl = np.inf
+        if self.unit.is_worker() and self.unit.can_act():
+            if self.wood == 100 and tl > dist+3:
+                self.log("Building")
+                self.build_city()
+            elif self.wood > 30 and tl < dist+1 and low_city:
+                self.log("Fuelling_low_city")
+                self.go_to_city(low_city)
+            elif self.unit.get_cargo_space_left() > 0:
+                self.log("Getting?")
+                self.get_resources()
+            else:
+                self.log("Emptying")
+                if low_city:
+                    self.go_to_city(low_city)
+                else:
+                    self.log("NothingToDo")
+
     def get_resources(self):
-        get_resources(self.unit, self.player, self.actions, self.resource_tiles)
+        action = get_resources(self.unit, self.player, self.resource_tiles)
+        if action:
+            self.do_action(action)
 
     def return_to_city(self):
-        return_to_city(self.unit, self.player, self.actions)
+        action = return_to_city(self.unit, self.player)
+        return self.do_action(action)
+
+    def build_city(self):
+        action = build_city(self.unit, self.game_state, log=lambda x: self.log(x))
+        return self.do_action(action)
+
+    def move(self, diretion):
+        return self.do_action(self.unit.move(diretion))
+
+    def go_to_city(self, city: City):
+        return self.move(self.unit.pos.direction_to(get_nearest_city_tile(self.unit.pos, city).pos))
 
 
-def go_to_city(unit: Unit, city: City):
-    return unit.move(unit.pos.direction_to(get_nearest_city_tile(unit.pos, city).pos))
-
-
-def build_city(unit: Unit, game_state: Game) -> str:
+def build_city(unit: Unit, game_state: Game, log=None) -> str:
     action = None
-    if unit.cargo.wood >= 100:
-        target_cell = get_nearest_unoccupied(unit.pos, game_state)
-        if target_cell.pos.equals(unit.pos):
-            logging.info(f'BUILDING!!')
-            action = unit.build_city()
-        else:
-            logging.info(f'Moving {unit.pos.direction_to(target_cell.pos)}')
-            pos_target = unit.pos.translate(unit.pos.direction_to(target_cell.pos), 1)
-            cell_target = game_state.map.get_cell_by_pos(pos_target)
-            if cell_target.citytile or cell_target.has_resource():
-                pos_target = get_nearest_non_city(unit.pos, game_state)
-                if not pos_target:
-                    action = unit.move(random_direction())
-                else:
-                    action = unit.move(unit.pos.direction_to(target_cell.pos))
-            else:
-                action = unit.move(unit.pos.direction_to(target_cell.pos))
-
+    if unit.can_build(game_state.map):
+        if log:
+            log('BUILDING')
+        action = unit.build_city()
     else:
-        logging.warning('Attempting to build city with not enough resources')
+        target_cell = get_nearest_unoccupied_cell(unit.pos, game_state)
+        pos_target = unit.pos.translate(unit.pos.direction_to(target_cell.pos), 1)
+        cell_target = game_state.map.get_cell_by_pos(pos_target)
+        if cell_target.citytile:
+            if log:
+                log('AVOIDING')
+            action = unit.move(random_direction())
+        else:
+            if log:
+                log('Moving-to-build')
+            action = unit.move(unit.pos.direction_to(target_cell.pos))
     return action
 
 
-def get_resources(unit, player, actions, resource_tiles):
+def get_resources(unit, player, resource_tiles) -> str:
+    action = ''
     closest_dist = math.inf
     closest_resource_tile = None
     for resource_tile in resource_tiles:
@@ -83,10 +143,12 @@ def get_resources(unit, player, actions, resource_tiles):
             closest_resource_tile = resource_tile
 
     if closest_resource_tile is not None:
-        actions.append(unit.move(unit.pos.direction_to(closest_resource_tile.pos)))
+        action = unit.move(unit.pos.direction_to(closest_resource_tile.pos))
+    return action
 
 
-def return_to_city(unit, player, actions):
+def return_to_city(unit, player):
+    action = ''
     if len(player.cities) > 0:
         closest_dist = math.inf
         closest_city_tile = None
@@ -98,4 +160,5 @@ def return_to_city(unit, player, actions):
                     closest_city_tile = city_tile
         if closest_city_tile is not None:
             move_dir = unit.pos.direction_to(closest_city_tile.pos)
-            actions.append(unit.move(move_dir))
+            action = unit.move(move_dir)
+    return action
