@@ -1,4 +1,4 @@
-from Blob import Blob
+from Unit import MyUnit
 
 from lux.game import Game
 from lux.game_map import Cell, RESOURCE_TYPES

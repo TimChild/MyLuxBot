@@ -20,6 +20,9 @@ DIRECTIONS = Constants.DIRECTIONS
 DIRS = [DIRECTIONS.EAST, DIRECTIONS.NORTH, DIRECTIONS.WEST, DIRECTIONS.SOUTH]
 
 
+
+
+
 def get_nearest_city(unit_pos: Position, cities: Dict[str, City]) -> CityTile:
     nearest_tile = None
     nearest_distance = np.inf

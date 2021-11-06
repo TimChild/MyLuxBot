@@ -28,7 +28,7 @@ DIRECTIONS = Constants.DIRECTIONS
 DIRS = [DIRECTIONS.EAST, DIRECTIONS.NORTH, DIRECTIONS.WEST, DIRECTIONS.SOUTH]
 
 
-class Blob:
+class MyUnit:
     def __init__(self):
         self.unit: Unit = None
         self.player: Player = None

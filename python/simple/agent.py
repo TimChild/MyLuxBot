@@ -11,7 +11,7 @@ from lux import annotate
 from lux.game_objects import Player, Unit, City, Position, CityTile
 
 from Player import MyPlayer
-from Blob import Blob
+from Unit import MyUnit
 from City import MyCity
 
 import logging
@@ -63,7 +63,7 @@ def agent(observation, configuration):
     for unit in player.units:
         if unit.id not in blobs:
             logging.info(f'New unit {unit.id}')
-            blobs[unit.id] = Blob()
+            blobs[unit.id] = MyUnit()
         blob = blobs[unit.id]
 
         blob.update(unit, player, actions, game_state, resource_tiles, occupied_tiles)
