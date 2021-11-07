@@ -132,7 +132,6 @@ class MyUnit:
         return self.move(self.unit.pos.direction_to(get_nearest_city_tile(self.unit.pos, city).pos))
 
 
-
 def get_resources(unit, player, resource_tiles) -> str:
     action = ''
     closest_dist = math.inf
