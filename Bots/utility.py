@@ -12,6 +12,10 @@ import random
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, TYPE_CHECKING
 
+
+import pathfinding
+
+
 DIRECTIONS = Constants.DIRECTIONS
 DIRS = [DIRECTIONS.EAST, DIRECTIONS.NORTH, DIRECTIONS.WEST, DIRECTIONS.SOUTH]
 
@@ -36,7 +40,10 @@ def get_nearest_city_tile(unit_pos: Position, city: City) -> CityTile:
         if dist < nearest_distance:
             nearest_tile = tile
             nearest_distance = dist
-    return nearest_tile
+    if nearest_tile:
+        return nearest_tile.city_tile
+    else:
+        return None
 
 
 def get_nearest_cell(pos: Position, game_state: Game, occupied_tiles: List[Position], condition) -> Optional[Cell]:
@@ -129,4 +136,5 @@ def get_nearest_resource(map: GameMap, pos: Position, resource_type = Constants.
             closest_dist = dist
             closest_tile = tile
     return closest_tile
+
 

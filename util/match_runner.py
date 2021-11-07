@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import List
+import os
 
 from luxai2021.game.game import Game
 # from luxai2021.game.actions import *
@@ -36,16 +37,28 @@ def get_actions(game) -> List[Action]:
     return actions
 
 
-def generate_replay(agent1, agent2, max_turns=400, replay_name='default_replay', seed=1):
+def print_actions(game, actions):
+    print(f"Turn: {game.state['turn']}")
+    for action in actions:
+        if action:
+            print(action.to_message(game))
+        else:
+            print('"None" action detected')
+
+
+def generate_replay(agent1, agent2, max_turns=400, replay_name='default_replay', seed=1, replay_dir='./replays'):
     configs = LuxMatchConfigs_Default
     configs["stateful_replay"] = True
     configs["seed"] = seed
-    game = Game(configs, agents=[agent1, agent2])
+    game = Game(configs)
+    game.agents = [agent1, agent2]
     # game = env.game
-
-    filepath = f'./replays/{replay_name}.json'
+    filepath = os.path.join(replay_dir, replay_name)
+    filepath = f'{filepath}.json'
     # game.start_replay_logging(stateful=True, replay_folder=env.replay_folder, replay_filename_prefix=env.replay_prefix)  # Adds a random number to filename
     game.replay = Replay(game, filepath)  # Same effect as above but with determined name
+    game.replay_folder = replay_dir
+    game.replay_filename_prefix = replay_name
 
     # Init agents
     agent1.game_start(game)
@@ -57,14 +70,13 @@ def generate_replay(agent1, agent2, max_turns=400, replay_name='default_replay',
     while not game_over and game.state['turn'] < max_turns:
         # Array of actions for both teams. Eg: MoveAction(team, unit_id, direction)
         actions = []
-
-        actions.extend(agent1.process_turn(game, Constants.TEAM.A))
-        actions.extend(agent2.process_turn(game, Constants.TEAM.B))
+        actions = get_actions(game)
         game_over = game.run_turn_with_actions(actions)
 
     print("Game done, final map:")
     print(game.map.get_map_string())
-    game.replay.write(game)
+    if not game_over:
+        game.replay.write(game)
     with open(filepath, 'r') as f:
         replay_json = json.load(f)
     return replay_json
@@ -77,4 +89,5 @@ if __name__ == "__main__":
     agent1 = BasicAgent()
     agent2 = BasicAgent()
 
-    replay = generate_replay(agent1, max_turns=10, agent2=agent2, seed=1)
+    replay = generate_replay(agent1, agent2,  max_turns=15, seed=1, replay_dir='../replays')
+
