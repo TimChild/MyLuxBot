@@ -5,7 +5,7 @@ from lux import annotate
 from random import randint
 
 
-class Agent():
+class BasicAgent():
     def __init__(self, game_state: game.Game, player: game.Player):
         self.game_state = game_state
         self.player = player
@@ -17,4 +17,6 @@ class Agent():
 
     def update(self, game_state: game.Game):
         self.game_state = game_state
+
+
 
