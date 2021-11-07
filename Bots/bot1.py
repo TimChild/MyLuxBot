@@ -1,18 +1,10 @@
 from __future__ import annotations
-from typing import List, Dict
+from typing import Dict
 
-from luxai2021.game.game import Game, Position
+from luxai2021.game.game import Game
 from luxai2021.env.agent import Agent
 
 from Bots.component_classes import MyState, MyCity, MyUnit
-
-
-def units_at_position(pos: Position, units: List[MyUnit]) -> List[MyUnit]:
-    current_units = []
-    for unit in units:
-        if pos.distance_to(unit.pos) == 0:
-            current_units.append(unit)
-    return current_units
 
 
 class BasicAgent(Agent):
@@ -31,10 +23,10 @@ class BasicAgent(Agent):
             self.game_state = MyState(game, self.team)
 
     def update_units(self):
-        units = self.game_state.units()
+        units = self.game_state.units
         for unit_id in units:  # Add new units
             if unit_id not in self.units:
-                self.units[unit_id] = MyUnit(units[unit_id], self.game_state)
+                self.units[unit_id] = units[unit_id]
 
         for unit_id in list(self.units.keys()):  # Remove missing units
             if unit_id not in units:
@@ -42,10 +34,10 @@ class BasicAgent(Agent):
                 self.units.pop(unit_id)
 
     def update_cities(self):
-        cities = self.game_state.cities()
-        for city_id in cities:  # Add new units
+        cities = self.game_state.cities
+        for city_id, city in cities.items():  # Add new units
             if city_id not in self.cities:
-                self.cities[city_id] = MyCity(cities[city_id], self.game_state, list(self.units.values()))
+                self.cities[city_id] = city
 
         for city_id in list(self.cities.keys()):  # Remove missing units
             if city_id not in cities:
@@ -79,16 +71,10 @@ class BasicAgent(Agent):
         return actions
 
 
-
-
-
-
-
-
 if __name__ == '__main__':
     from util.match_runner import get_game, get_actions, render
 
-    max_turns = 400
+    max_turns = 30
 
     # Create agent
     agent1 = BasicAgent()
@@ -105,5 +91,6 @@ if __name__ == '__main__':
         i += 1
         actions = get_actions(game_inst)
         game_over = game_inst.run_turn_with_actions(actions)
+
 
     render(game_inst)

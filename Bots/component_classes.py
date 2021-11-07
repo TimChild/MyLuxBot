@@ -1,6 +1,6 @@
 from __future__ import annotations
 from collections import deque
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import numpy as np
 from luxai2021.game import actions as act
@@ -20,14 +20,18 @@ class MyState:
         self.team = team
         self.turn = 0
         self.night = 0
+        self.logging = True
 
         self._occupied = []
+        self._cities = {}
+        self._all_units = {}
 
     def update(self, game):
         self.game = game
         self.turn = game.state['turn']
         self.night = game.is_night()
-        self._occupied = []
+        self._cities = {}
+        self._all_units = {}
 
     @property
     def map(self):
@@ -37,54 +41,85 @@ class MyState:
     def worker_cap_reached(self):
         return self.game.worker_unit_cap_reached(self.team)
 
-    def units(self):
-        units = self.game.state["teamStates"][self.team]["units"]
-        return units
+    @property
+    def units(self) -> Dict[str, MyUnit]:
+        return {k: v for k, v in self.all_units.items() if v.team == self.team}
 
-    def cities(self) -> Dict[str, City]:
-        cities = {}
-        for k, city in self.game.cities.items():
-            if city.team == self.team:
-                cities[k] = city
-        return cities
+    @property
+    def all_units(self) -> Dict[str, MyUnit]:
+        if not self._all_units:
+            self._all_units = dict(**self.game.state["teamStates"][0]["units"], **self.game.state["teamStates"][1]["units"])
+            self._all_units = {k: MyUnit(v, v.team, self) for k, v in self._all_units.items()}
+        return self._all_units
+
+    @property
+    def cities(self) -> Dict[str, MyCity]:
+        return {k: v for k, v in self.all_cities.items() if v.team == self.team}
+
+    @property
+    def all_cities(self) -> Dict[str, MyCity]:
+        if not self._cities:
+            for k, city in self.game.cities.items():
+                city = MyCity(city, city.team, self)
+                self._cities[k] = city
+        return self._cities
 
     def lowest_city(self):
         """Returns city with lowest fuel"""
-        cities = self.cities()
+        cities = self.cities
         return util.lowest_city(cities)
 
     @property
-    def occupied_tiles(self):
-        # occupied = self.game.map.resources
+    def occupied_tiles(self) -> List[Position]:
         if not self._occupied:
+            cities = self.all_cities
+            units = self.all_units
+            resources = self.game.map.resources
             occupied = []
-            for x in range(self.game.map.width):
-                for y in range(self.game.map.height):
-                    cell = self.game.map.get_cell(x, y)
-                    if cell.has_resource() or cell.is_city_tile():
-                        occupied.append(cell)
+            for city in cities.values():
+                for tile in city.tiles:
+                    occupied.append(tile.pos)
+            for unit in units.values():
+                pos = unit.next_pos if unit.next_pos else unit.pos
+                occupied.append(pos)
+            for resource in resources:
+                occupied.append(resource.pos)
+            self._occupied = occupied
         return self._occupied
 
-    def add_to_occupied(self, cell):
-        if cell not in self._occupied:
-            self._occupied.append(cell)
+    def add_to_occupied(self, pos: Position):
+        if pos not in self._occupied:
+            self._occupied.append(pos)
+        else:
+            self.log(f'Trying to add {pos} to occupied, but already there')
+
+    def remove_from_occupied(self, pos: Position):
+        if pos in self._occupied:
+            self._occupied.remove(pos)
+        else:
+            self.log(f'Tried to remove {pos} from occupied which was\'nt in occupied')
+
+    def log(self, message):
+        if self.logging:
+            print(message)
 
 
 class MyCity:
-    def __init__(self, city: City, game_state: MyState, units: List[MyUnit]):
+    def __init__(self, city: City, team: int, game_state: MyState):
         self.city = city
         self.id = self.city.id
         self.tiles: List[Cell] = self.city.city_cells
-        self.units = units
         self.game_state = game_state
+        self.team = team
 
         self.previous_actions = deque(maxlen=3)
         self.logging = True
 
-    def update(self, game_state: MyState, units: List[MyUnit]):
+    def update(self, game_state: MyState):
+        if self.team != game_state.team:
+            raise ValueError
         self.game_state = game_state
         self.tiles = self.city.city_cells
-        self.units = units
 
     def self_action(self) -> List[act.Action]:
         """Have city decide what action to take"""
@@ -95,7 +130,7 @@ class MyCity:
         for tile in self.tiles:
             tile = tile.city_tile
             if tile.can_act():
-                if util.time_left(self.city) > fuel_buffer and not self.game_state.night and not self.game_state.worker_cap_reached:
+                if util.time_left(self) > fuel_buffer and not self.game_state.night and not self.game_state.worker_cap_reached:
                     self.log('Spawning worker')
                     action = self.do_action(act.SpawnWorkerAction(self.game_state.team, tile.city_id, tile.pos.x, tile.pos.y))
                 elif tile.can_research():
@@ -123,20 +158,27 @@ class MyCity:
 
 
 class MyUnit:
-    def __init__(self, unit: Unit, game_state: MyState):
+    def __init__(self, unit: Unit, team: int, game_state: MyState):
         self.unit = unit
         self.id = unit.id
         self.pos = unit.pos
         self.previous_actions = deque([], maxlen=3)
         self.game_state = game_state
+        self.team = team
 
         self.current_mission = None  # Stores current intention of unit
+        self.next_pos: Optional[Position] = None  # For storing destination if moving
         self.logging = True
+
+        self._move_queue = None
 
     def update(self, game_state: MyState):
         """To be called at the beginning of turn"""
+        if self.team != game_state.team:
+            raise ValueError
         self.game_state = game_state
         self.pos = self.unit.pos
+        self.next_pos = None
 
     def self_action(self):
         """Have unit decide what action to take"""
@@ -182,27 +224,42 @@ class MyUnit:
         """Basic move in direction"""
         if direction in {C.DIRECTIONS.NORTH, C.DIRECTIONS.SOUTH, C.DIRECTIONS.EAST, C.DIRECTIONS.WEST, C.DIRECTIONS.CENTER}:
             action = act.MoveAction(self.unit.team, self.id, direction)
-            new_cell = self.game_state.map.get_cell_by_pos(self.unit.pos.translate(direction, 1))
-            self.game_state.add_to_occupied(new_cell)
+            new_pos = self.unit.pos.translate(direction, 1)
+            self.next_pos = new_pos
+            self.game_state.add_to_occupied(self.next_pos)
+            self.game_state.remove_from_occupied(self.pos)
         else:
             print(f'Asked for invalid move: {direction}')
             action = act.MoveAction(self.unit.team, self.id, C.DIRECTIONS.CENTER)
         return self.do_action(action)
 
-    def move_to(self, position: Position) -> act.Action:
+    def move_to(self, position: Position, avoid_cities = False) -> act.Action:
         """Move to a new location"""
         self.current_mission = 'moving'
         action = None
-        next_pos = self.pos.translate(self.pos.direction_to(position), 1)
-        if next_pos == self.pos:
+        matrix_map = util.get_matrix_map(
+            self.game_state.map,
+            list(self.game_state.all_cities.values()),
+            list(self.game_state.all_units.values()),
+            self.team,
+            avoid_cities=avoid_cities, road_cost=0.5)
+        new_path = util.get_path(self.pos, position, matrix_map)
+        if len(new_path) == 0:
+            self.log(f'No path from {self.pos} to {position}')
+            self.move(C.DIRECTIONS.CENTER)
+        elif len(new_path) == 1:
             self.current_mission = ''
             self.log('Already at desired position')
             action = self.move(C.DIRECTIONS.CENTER)
-
+        else:
+            self._move_queue = deque(new_path[1:])
+            self.log(f'Progressing towards {position}')
+            self.move(position.direction_to(Position(*new_path[1])))
         return action
 
     def go_to_city(self, city):
-        return self.move(self.unit.pos.direction_to(util.get_nearest_city_tile(self.unit.pos, city).pos))
+        return self.move_to(city, avoid_cities=False)  # TODO: Probably do want to avoid other cities on the way there.
+        # return self.move(self.unit.pos.direction_to(util.get_nearest_city_tile(self.unit.pos, city).pos))
 
     # def transfer_to_city(self, city: City, resource_type, keep=0):
     #     """Try to transfer resources to a city (or move towards the city)
@@ -231,14 +288,16 @@ class MyUnit:
         else:
             target_cell = util.get_nearest_unoccupied_cell(self.unit.pos, self.game_state.game, self.game_state.occupied_tiles)
             if target_cell:
-                pos_target = self.unit.pos.translate(self.unit.pos.direction_to(target_cell.pos), 1)
-                cell_target = self.game_state.map.get_cell_by_pos(pos_target)
-                if cell_target.city_tile:
-                    self.log('avoiding-citytile')
-                    action = self.move(util.random_direction())  # TODO: Better avoiding
-                else:
-                    self.log('Moving-to-build')
-                    action = self.move(self.unit.pos.direction_to(target_cell.pos))
+                self.log(f'Moving to empty cell {target_cell.pos}')
+                action = self.move_to(target_cell.pos, avoid_cities=True)  # Avoid dropping off resources in a city on the way
+                # pos_target = self.unit.pos.translate(self.unit.pos.direction_to(target_cell.pos), 1)
+                # cell_target = self.game_state.map.get_cell_by_pos(pos_target)
+                # if cell_target.city_tile:
+                #     self.log('avoiding-citytile')
+                #     action = self.move(util.random_direction())  # TODO: Better avoiding
+                # else:
+                #     self.log('Moving-to-build')
+                #     action = self.move(self.unit.pos.direction_to(target_cell.pos))
             else:
                 self.log('STUCK')
                 action = self.move(C.DIRECTIONS.CENTER)
@@ -247,7 +306,8 @@ class MyUnit:
     def get_resources(self, resource_type=C.RESOURCE_TYPES.WOOD) -> act.Action:
         closest_resource = util.get_nearest_resource(self.game_state.map, self.unit.pos, resource_type=resource_type)
         if closest_resource:
-            action = self.move(self.unit.pos.direction_to(closest_resource.pos))
+            action = self.move_to(closest_resource.pos, avoid_cities=False)
+            # action = self.move(self.unit.pos.direction_to(closest_resource.pos))
         else:
             self.log('No resource to get')
             action = self.move(C.DIRECTIONS.CENTER)

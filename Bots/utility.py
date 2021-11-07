@@ -1,6 +1,7 @@
+from __future__ import annotations
 from luxai2021.game.game import Game, GameMap
 from luxai2021.game.game_map import Cell, RESOURCE_TYPES
-from luxai2021.game.constants import Constants
+from luxai2021.game.constants import Constants as C
 from luxai2021.game.unit import Unit
 from luxai2021.game.city import City, CityTile
 from luxai2021.game.position import Position
@@ -11,12 +12,12 @@ from itertools import product
 import random
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, TYPE_CHECKING
-
+if TYPE_CHECKING:
+    from component_classes import MyUnit, MyCity, MyState
 
 import pathfinding
 
-
-DIRECTIONS = Constants.DIRECTIONS
+DIRECTIONS = C.DIRECTIONS
 DIRS = [DIRECTIONS.EAST, DIRECTIONS.NORTH, DIRECTIONS.WEST, DIRECTIONS.SOUTH]
 
 
@@ -32,10 +33,10 @@ def get_nearest_city(unit_pos: Position, cities: Dict[str, City]) -> CityTile:
     return nearest_tile
 
 
-def get_nearest_city_tile(unit_pos: Position, city: City) -> CityTile:
+def get_nearest_city_tile(unit_pos: Position, city: MyCity) -> Optional[CityTile]:
     nearest_tile = None
     nearest_distance = np.inf
-    for tile in city.city_cells:
+    for tile in city.tiles:
         dist = tile.pos.distance_to(unit_pos)
         if dist < nearest_distance:
             nearest_tile = tile
@@ -48,7 +49,7 @@ def get_nearest_city_tile(unit_pos: Position, city: City) -> CityTile:
 
 def get_nearest_cell(pos: Position, game_state: Game, occupied_tiles: List[Position], condition) -> Optional[Cell]:
     def empty(cell: Cell) -> bool:
-        if cell.pos in [t.pos for t in occupied_tiles] or not condition(cell):
+        if cell.pos in occupied_tiles or not condition(cell):
             return False
         return True
 
@@ -70,10 +71,10 @@ def get_nearest_cell(pos: Position, game_state: Game, occupied_tiles: List[Posit
 def get_nearest_unoccupied_cell(pos: Position, game_state: Game, occupied_tiles: List[Position]) -> Optional[Cell]:
     return get_nearest_cell(pos, game_state, occupied_tiles,
                             condition=lambda cell: not cell.city_tile and not cell.has_resource())
-
-
-def get_nearest_non_city(pos: Position, game_state: Game, occupied_tiles: List[Position]) -> Optional[Cell]:
-    return get_nearest_cell(pos, game_state, occupied_tiles, condition=lambda cell: not cell.city_tile)
+#
+#
+# def get_nearest_non_city(pos: Position, game_state: Game, occupied_tiles: List[Position]) -> Optional[Cell]:
+#     return get_nearest_cell(pos, game_state, occupied_tiles, condition=lambda cell: not cell.city_tile)
 
 
 def in_map(pos: Position, game_state):
@@ -105,7 +106,7 @@ def random_direction():
     return DIRS[v]
 
 
-def lowest_city(cities: Dict[str, City]) -> City:
+def lowest_city(cities: Dict[str, MyCity]) -> MyCity:
     low_city = None
     lowest_val = np.inf
     for k, city in cities.items():
@@ -116,17 +117,17 @@ def lowest_city(cities: Dict[str, City]) -> City:
     return low_city
 
 
-def time_left(city: Optional[City]) -> float:
+def time_left(city: Optional[MyCity]) -> float:
     if city is None:
         return np.inf
-    return city.fuel / city.get_light_upkeep()
+    return city.city.fuel / city.city.get_light_upkeep()
 
 
 def distance_between(pos1: Position, pos2: Position):
     return pos1.distance_to(pos2)
 
 
-def get_nearest_resource(map: GameMap, pos: Position, resource_type = Constants.RESOURCE_TYPES.WOOD):
+def get_nearest_resource(map: GameMap, pos: Position, resource_type = C.RESOURCE_TYPES.WOOD) -> Cell:
     closest_tile = None
     closest_dist = np.inf
     for tile in map.resources_by_type[resource_type]:
@@ -138,3 +139,82 @@ def get_nearest_resource(map: GameMap, pos: Position, resource_type = Constants.
     return closest_tile
 
 
+def units_at_position(pos: Position, units: List[MyUnit]) -> List[MyUnit]:
+    current_units = []
+    for unit in units:
+        if pos.distance_to(unit.pos) == 0:
+            current_units.append(unit)
+    return current_units
+
+
+def get_path(start: Position, end: Position, matrix_map: np.ndarray) -> List[str]:
+    """
+    Get path from start to finish avoiding obstacles
+    https://pypi.org/project/pathfinding/
+
+    Args:
+        start (): Start position
+        end (): End position
+        matrix_map (): Map in array where <= 0 means impassible, and > 0 is cost to travel
+
+    Returns:
+        Path from start to finish (including both) or an empty list if no path can be found
+    """
+    from pathfinding.core.grid import Grid
+    from pathfinding.finder.a_star import AStarFinder
+
+    grid = Grid(matrix=matrix_map)
+    start = grid.node(start.x, start.y)
+    end = grid.node(end.x, end.y)
+
+    finder = AStarFinder()
+    path, runs = finder.find_path(start, end, grid)
+    return path
+
+
+def get_matrix_map(map: GameMap, all_cities: List[MyCity], all_units: List[MyUnit], team: int, avoid_cities=False,
+                   road_cost=0.5) -> np.ndarray:
+    """
+    Convert GameMap into a map for pathfinding
+
+    Args:
+        map ():
+        all_cities (): All cities on the map
+        all_units (): All units on the map
+        team (): To figure out which city cells are impassable
+        avoid_cities ():  Whether to avoid own cities (i.e. if don't want to accidentally drop off resources)
+        road_cost (): the cost to travel by road tile, the lower the cost the more it is prioritized
+
+    Returns:
+
+    """
+    state_map = np.array(map.to_state_object())  # Includes resources and roads but not cities or units
+    matrix_map = np.ones(state_map.shape)  # Start with all cells having move weight of 1
+
+    # resources aren't in the way, so for now just leave those cells with 1
+    for y, row in enumerate(state_map):
+        for x, info in enumerate(row):
+            if info:
+                if 'road' in info:
+                    if info['road'] >= 0:
+                        matrix_map[y, x] = road_cost
+
+    for city in all_cities:
+        if avoid_cities or city.team != team:
+            for tile in city.tiles:
+                pos = tile.pos
+                matrix_map[pos.y, pos.x] = 0  # Mark impassable
+
+    #
+    for unit in all_units:
+        unit_pos = unit.next_pos if unit.next_pos else unit.pos
+        if map.get_cell_by_pos(unit_pos).is_city_tile() and unit.team == team:
+            pass  # Allowed to share city tile on same team
+        else:
+            matrix_map[unit_pos.y, unit_pos.x] = 1  # Mark impassable
+
+    return matrix_map
+
+
+if __name__ == '__main__':
+    pass
