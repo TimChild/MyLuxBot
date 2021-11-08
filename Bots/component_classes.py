@@ -1,6 +1,6 @@
 from __future__ import annotations
 from collections import deque
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Deque
 
 import numpy as np
 from luxai2021.game import actions as act
@@ -97,7 +97,7 @@ class MyState:
         if pos in self._occupied:
             self._occupied.remove(pos)
         else:
-            self.log(f'Tried to remove {pos} from occupied which was\'nt in occupied')
+            self.log(f'Tried to remove {pos} from occupied which wasn\'t in occupied')
 
     def log(self, message):
         if self.logging:
@@ -170,7 +170,7 @@ class MyUnit:
         self.next_pos: Optional[Position] = None  # For storing destination if moving
         self.logging = True
 
-        self._move_queue = None
+        self._move_queue: Deque = None
 
     def update(self, game_state: MyState):
         """To be called at the beginning of turn"""
@@ -179,6 +179,16 @@ class MyUnit:
         self.game_state = game_state
         self.pos = self.unit.pos
         self.next_pos = None
+
+    def continue_mission(self):
+        # TODO: This
+        if self.current_mission == 'moving':
+            # self._move_queue.popleft
+            self.move_to()
+        elif self.current_mission == 'building':
+            self.build_city()
+        else:
+            pass
 
     def self_action(self):
         """Have unit decide what action to take"""
@@ -197,6 +207,9 @@ class MyUnit:
             tl = np.inf
         action = None
         if self.unit.is_worker() and self.can_act():
+            # if self.current_mission:  # TODO: Finish this
+            #     self.continue_mission()
+
             if self.wood == 100 and not self.game_state.night and tl > dist+build_thresh:
                 action = self.build_city()
             # elif self.wood > min_wood_thresh and tl < dist+immediate_fuel_thresh and low_city:
@@ -242,11 +255,13 @@ class MyUnit:
             list(self.game_state.all_cities.values()),
             list(self.game_state.all_units.values()),
             self.team,
-            avoid_cities=avoid_cities, road_cost=0.5)
+            avoid_cities=avoid_cities, road_cost=1)
         new_path = util.get_path(self.pos, position, matrix_map)
+        self.log(f'Path from {self.pos} to {position}: {new_path}')
+
         if len(new_path) == 0:
             self.log(f'No path from {self.pos} to {position}')
-            self.move(C.DIRECTIONS.CENTER)
+            action = self.move(C.DIRECTIONS.CENTER)
         elif len(new_path) == 1:
             self.current_mission = ''
             self.log('Already at desired position')
@@ -254,11 +269,12 @@ class MyUnit:
         else:
             self._move_queue = deque(new_path[1:])
             self.log(f'Progressing towards {position}')
-            self.move(position.direction_to(Position(*new_path[1])))
+            x, y = new_path[1]
+            action = self.move(self.pos.direction_to(Position(x, y)))
         return action
 
     def go_to_city(self, city):
-        return self.move_to(city, avoid_cities=False)  # TODO: Probably do want to avoid other cities on the way there.
+        return self.move_to(util.get_nearest_city_tile(self.pos, city).pos, avoid_cities=False)  # TODO: Probably do want to avoid other cities on the way there.
         # return self.move(self.unit.pos.direction_to(util.get_nearest_city_tile(self.unit.pos, city).pos))
 
     # def transfer_to_city(self, city: City, resource_type, keep=0):

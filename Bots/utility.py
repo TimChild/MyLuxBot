@@ -173,7 +173,7 @@ def get_path(start: Position, end: Position, matrix_map: np.ndarray) -> List[str
 
 
 def get_matrix_map(map: GameMap, all_cities: List[MyCity], all_units: List[MyUnit], team: int, avoid_cities=False,
-                   road_cost=0.5) -> np.ndarray:
+                   road_cost=1) -> np.ndarray:
     """
     Convert GameMap into a map for pathfinding
 
@@ -189,7 +189,7 @@ def get_matrix_map(map: GameMap, all_cities: List[MyCity], all_units: List[MyUni
 
     """
     state_map = np.array(map.to_state_object())  # Includes resources and roads but not cities or units
-    matrix_map = np.ones(state_map.shape)  # Start with all cells having move weight of 1
+    matrix_map = np.ones(state_map.shape)*5  # Start with all cells having move weight of 1
 
     # resources aren't in the way, so for now just leave those cells with 1
     for y, row in enumerate(state_map):

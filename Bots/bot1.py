@@ -3,6 +3,7 @@ from typing import Dict
 
 from luxai2021.game.game import Game
 from luxai2021.env.agent import Agent
+from luxai2021.game.position import Position
 
 from Bots.component_classes import MyState, MyCity, MyUnit
 
@@ -54,11 +55,20 @@ class BasicAgent(Agent):
 
         actions = []
         for unit in self.units.values():
-            action = unit.self_action()
-            if action:
-                actions.append(action)
+            if unit.can_act():
+                unit.update(self.game_state)
+                # if unit.id == 'u_1':
+                #     action = unit.move_to(Position(2, 11))
+                # elif unit.id == 'u_2':
+                #     action = unit.move_to(Position(13, 11))
+                # else:
+                #     action = unit.self_action()
+                action = unit.self_action()
+                if action:
+                    actions.append(action)
 
         for city in self.cities.values():
+            city.update(self.game_state)
             city_actions = city.self_action()
             if city_actions:
                 actions.extend(city_actions)
@@ -72,25 +82,29 @@ class BasicAgent(Agent):
 
 
 if __name__ == '__main__':
-    from util.match_runner import get_game, get_actions, render
+    from util.match_runner import get_game, get_actions, render, generate_replay
 
     max_turns = 30
-
-    # Create agent
+    #
+    # # Create agent
+    # agent1 = BasicAgent()
+    # agent2 = BasicAgent()
+    #
+    # # Create a game
+    # game_inst = get_game(agent1, agent2, seed=1)
+    #
+    # game_over = False
+    # i = 0
+    # while not game_over and i < max_turns:
+    #     if i % 10 == 0:
+    #         render(game_inst)
+    #     i += 1
+    #     actions = get_actions(game_inst)
+    #     game_over = game_inst.run_turn_with_actions(actions)
+    #
+    #
+    # render(game_inst)
+    #
     agent1 = BasicAgent()
     agent2 = BasicAgent()
-
-    # Create a game
-    game_inst = get_game(agent1, agent2, seed=1)
-
-    game_over = False
-    i = 0
-    while not game_over and i < max_turns:
-        if i % 10 == 0:
-            render(game_inst)
-        i += 1
-        actions = get_actions(game_inst)
-        game_over = game_inst.run_turn_with_actions(actions)
-
-
-    render(game_inst)
+    generate_replay(agent1, agent2, max_turns=max_turns, replay_dir='../replays', seed=1)

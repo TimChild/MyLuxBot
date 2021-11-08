@@ -89,5 +89,5 @@ if __name__ == "__main__":
     agent1 = BasicAgent()
     agent2 = BasicAgent()
 
-    replay = generate_replay(agent1, agent2,  max_turns=15, seed=1, replay_dir='../replays')
+    replay = generate_replay(agent1, agent2,  max_turns=400, seed=1, replay_dir='../replays')
 
