@@ -14,6 +14,9 @@ from luxai2021.game.unit import Unit
 from Bots import utility as util
 
 
+Position.__repr__ = lambda self: f'Position({self.x}, {self.y})'
+
+
 class MyState:
     def __init__(self, game: Game, team):
         self.game = game
@@ -166,11 +169,12 @@ class MyUnit:
         self.game_state = game_state
         self.team = team
 
-        self.current_mission = None  # Stores current intention of unit
+        self.current_mission = deque()  # Stores current intention of unit
         self.next_pos: Optional[Position] = None  # For storing destination if moving
         self.logging = True
 
-        self._move_queue: Deque = None
+        self._move_queue: Deque = deque()
+        self._avoiding_cities = False
 
     def update(self, game_state: MyState):
         """To be called at the beginning of turn"""
@@ -180,15 +184,20 @@ class MyUnit:
         self.pos = self.unit.pos
         self.next_pos = None
 
-    def continue_mission(self):
+    def continue_mission(self) -> act.Action:
         # TODO: This
-        if self.current_mission == 'moving':
+        mission = self.current_mission[-1]
+        action = None
+        if mission == 'moving':
             # self._move_queue.popleft
-            self.move_to()
-        elif self.current_mission == 'building':
-            self.build_city()
+            action = self.continue_move()
+        elif mission == 'build_city':
+            action = self.build_city()
         else:
-            pass
+            self.log(f'{mission} not understood')
+            self.current_mission.pop()
+            action = self.move(C.DIRECTIONS.CENTER)
+        return action
 
     def self_action(self):
         """Have unit decide what action to take"""
@@ -207,10 +216,9 @@ class MyUnit:
             tl = np.inf
         action = None
         if self.unit.is_worker() and self.can_act():
-            # if self.current_mission:  # TODO: Finish this
-            #     self.continue_mission()
-
-            if self.wood == 100 and not self.game_state.night and tl > dist+build_thresh:
+            if self.current_mission:  # TODO: Finish this
+                action = self.continue_mission()
+            elif self.wood == 100 and not self.game_state.night and tl > dist+build_thresh:
                 action = self.build_city()
             # elif self.wood > min_wood_thresh and tl < dist+immediate_fuel_thresh and low_city:
             #     self.log("Fuelling_low_city")
@@ -239,16 +247,42 @@ class MyUnit:
             action = act.MoveAction(self.unit.team, self.id, direction)
             new_pos = self.unit.pos.translate(direction, 1)
             self.next_pos = new_pos
-            self.game_state.add_to_occupied(self.next_pos)
-            self.game_state.remove_from_occupied(self.pos)
+            if not direction == C.DIRECTIONS.CENTER:
+                self.game_state.add_to_occupied(self.next_pos)
+                self.game_state.remove_from_occupied(self.pos)
         else:
             print(f'Asked for invalid move: {direction}')
             action = act.MoveAction(self.unit.team, self.id, C.DIRECTIONS.CENTER)
         return self.do_action(action)
 
+    def continue_move(self) -> act.Action:
+        """If there is already a move path just execute the next step if possible"""
+        if self._move_queue:
+            next_loc = self._move_queue[0]
+            if self.pos.equals(next_loc):  # If last move was successful remove from list
+                self._move_queue.popleft()
+                if self._move_queue:
+                    next_loc = self._move_queue[0]
+                else:
+                    self.log(f'Reached target pos {next_loc}')
+                    self.current_mission.pop()
+                    return self.move(C.DIRECTIONS.CENTER)
+            if next_loc in self.game_state.occupied_tiles:
+                self.log(f'Planned path blocked at {next_loc}, finding new route to {self._move_queue[-1]}')
+                self.current_mission.pop()
+                return self.move_to(self._move_queue[-1], avoid_cities=self._avoiding_cities)
+            else:
+                return self.move(self.pos.direction_to(next_loc))
+        else:
+            self.log('No move queue for this unit')
+            self.current_mission.pop()
+            return self.move(C.DIRECTIONS.CENTER)
+
     def move_to(self, position: Position, avoid_cities = False) -> act.Action:
         """Move to a new location"""
-        self.current_mission = 'moving'
+        self.current_mission.append('moving')
+        self._avoiding_cities = avoid_cities
+
         action = None
         matrix_map = util.get_matrix_map(
             self.game_state.map,
@@ -269,8 +303,8 @@ class MyUnit:
         else:
             self._move_queue = deque(new_path[1:])
             self.log(f'Progressing towards {position}')
-            x, y = new_path[1]
-            action = self.move(self.pos.direction_to(Position(x, y)))
+            next_pos = self._move_queue[0]
+            action = self.move(self.pos.direction_to(next_pos))
         return action
 
     def go_to_city(self, city):
@@ -293,14 +327,15 @@ class MyUnit:
 
     def build_city(self) -> act.Action:
         """Take action towards building a city"""
-        self.current_mission = 'build_city'
+        if not self.current_mission or not self.current_mission[-1] == 'build_city':
+            self.current_mission.append('build_city')
         if self.wood < 100:
-            self.current_mission = ''
-            self.log('Trying to build city but not enough fuel, getting fuel instead')
-            action = self.get_resources(C.RESOURCE_TYPES.WOOD)
+            self.current_mission.pop()
+            self.log('Trying to build city but not enough fuel')
+            action = self.move(C.DIRECTIONS.CENTER)
         elif self.unit.can_build(self.game_state.map):
             action = self.do_action(act.SpawnCityAction(self.unit.team, self.id))
-            self.current_mission = None
+            self.current_mission.pop()
         else:
             target_cell = util.get_nearest_unoccupied_cell(self.unit.pos, self.game_state.game, self.game_state.occupied_tiles)
             if target_cell:
@@ -316,6 +351,7 @@ class MyUnit:
                 #     action = self.move(self.unit.pos.direction_to(target_cell.pos))
             else:
                 self.log('STUCK')
+                self.current_mission.pop()
                 action = self.move(C.DIRECTIONS.CENTER)
         return action
 

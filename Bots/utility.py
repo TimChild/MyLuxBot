@@ -147,7 +147,7 @@ def units_at_position(pos: Position, units: List[MyUnit]) -> List[MyUnit]:
     return current_units
 
 
-def get_path(start: Position, end: Position, matrix_map: np.ndarray) -> List[str]:
+def get_path(start: Position, end: Position, matrix_map: np.ndarray) -> List[Position]:
     """
     Get path from start to finish avoiding obstacles
     https://pypi.org/project/pathfinding/
@@ -169,6 +169,7 @@ def get_path(start: Position, end: Position, matrix_map: np.ndarray) -> List[str
 
     finder = AStarFinder()
     path, runs = finder.find_path(start, end, grid)
+    path = [Position(p[0], p[1]) for p in path]
     return path
 
 
