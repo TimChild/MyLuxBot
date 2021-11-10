@@ -1,6 +1,6 @@
 from __future__ import annotations
 from collections import deque
-from typing import Dict, List, Optional, Deque
+from typing import Dict, List, Optional, Deque, Set
 
 import numpy as np
 from luxai2021.game import actions as act
@@ -18,23 +18,24 @@ Position.__repr__ = lambda self: f'Position({self.x}, {self.y})'
 
 
 class MyState:
-    def __init__(self, game: Game, team):
+    def __init__(self, game: Game, units: Dict[str, MyUnit], cities: Dict[str, MyCity], team: int):
         self.game = game
         self.team = team
         self.turn = 0
         self.night = 0
         self.logging = True
 
-        self._occupied = []
-        self._cities = {}
-        self._all_units = {}
+        self._occupied = set()
+        self._cities = cities
+        self._all_units = units
 
-    def update(self, game):
+    def update(self, game: Game, units: Dict[str, MyUnit], cities: Dict[str, MyCity]):
         self.game = game
         self.turn = game.state['turn']
         self.night = game.is_night()
-        self._cities = {}
-        self._all_units = {}
+        self._cities = cities
+        self._all_units = units
+        self._occupied = set()
 
     @property
     def map(self):
@@ -50,10 +51,11 @@ class MyState:
 
     @property
     def all_units(self) -> Dict[str, MyUnit]:
-        if not self._all_units:
-            self._all_units = dict(**self.game.state["teamStates"][0]["units"], **self.game.state["teamStates"][1]["units"])
-            self._all_units = {k: MyUnit(v, v.team, self) for k, v in self._all_units.items()}
         return self._all_units
+    #     if not self._all_units:
+    #         self._all_units = dict(**self.game.state["teamStates"][0]["units"], **self.game.state["teamStates"][1]["units"])
+    #         self._all_units = {k: MyUnit(v, v.team, self) for k, v in self._all_units.items()}
+    #     return self._all_units
 
     @property
     def cities(self) -> Dict[str, MyCity]:
@@ -61,11 +63,24 @@ class MyState:
 
     @property
     def all_cities(self) -> Dict[str, MyCity]:
-        if not self._cities:
-            for k, city in self.game.cities.items():
-                city = MyCity(city, city.team, self)
-                self._cities[k] = city
         return self._cities
+        # if not self._cities:
+        #     for k, city in self.game.cities.items():
+        #         city = MyCity(city, city.team, self)
+        #         self._cities[k] = city
+        # return self._cities
+
+    @property
+    def collision_tiles(self) -> Set[Position]:
+        """Returns a set of Positions which a unit would collide at"""
+        collisions = set()
+        for unit in self.all_units.values():
+            unit_pos = unit.next_pos if unit.next_pos else unit.pos
+            if self.game.map.get_cell_by_pos(unit_pos).is_city_tile() and unit.team == self.team:
+                pass  # Allowed to share city tile on same team
+            else:
+                collisions.add(unit_pos)
+        return collisions
 
     def lowest_city(self):
         """Returns city with lowest fuel"""
@@ -73,32 +88,35 @@ class MyState:
         return util.lowest_city(cities)
 
     @property
-    def occupied_tiles(self) -> List[Position]:
+    def occupied_tiles(self) -> Set[Position]:
+        #  TODO: Change how this works, not very often useful to have this entire set
         if not self._occupied:
             cities = self.all_cities
             units = self.all_units
             resources = self.game.map.resources
-            occupied = []
+            occupied = set()
             for city in cities.values():
                 for tile in city.tiles:
-                    occupied.append(tile.pos)
+                    occupied.add(tile.pos)
             for unit in units.values():
                 pos = unit.next_pos if unit.next_pos else unit.pos
-                occupied.append(pos)
+                occupied.add(pos)
             for resource in resources:
-                occupied.append(resource.pos)
+                occupied.add(resource.pos)
             self._occupied = occupied
         return self._occupied
 
     def add_to_occupied(self, pos: Position):
         if pos not in self._occupied:
-            self._occupied.append(pos)
+            self._occupied.add(pos)
         else:
             self.log(f'Trying to add {pos} to occupied, but already there')
 
     def remove_from_occupied(self, pos: Position):
         if pos in self._occupied:
-            self._occupied.remove(pos)
+            # self._occupied.remove(pos)  # This should only remove if nothing else on the cell
+            self.log(f'Temporarily not removing {pos} from occupied because not right')
+            pass
         else:
             self.log(f'Tried to remove {pos} from occupied which wasn\'t in occupied')
 
@@ -159,6 +177,9 @@ class MyCity:
         if self.logging:
             print(f'City {self.id}: {message}')
 
+    def __repr__(self):
+        return f'MyCity({self.id})'
+
 
 class MyUnit:
     def __init__(self, unit: Unit, team: int, game_state: MyState):
@@ -185,7 +206,6 @@ class MyUnit:
         self.next_pos = None
 
     def continue_mission(self) -> act.Action:
-        # TODO: This
         mission = self.current_mission[-1]
         action = None
         if mission == 'moving':
@@ -267,7 +287,7 @@ class MyUnit:
                     self.log(f'Reached target pos {next_loc}')
                     self.current_mission.pop()
                     return self.move(C.DIRECTIONS.CENTER)
-            if next_loc in self.game_state.occupied_tiles:
+            if next_loc in self.game_state.collision_tiles:
                 self.log(f'Planned path blocked at {next_loc}, finding new route to {self._move_queue[-1]}')
                 self.current_mission.pop()
                 return self.move_to(self._move_queue[-1], avoid_cities=self._avoiding_cities)
@@ -297,7 +317,7 @@ class MyUnit:
             self.log(f'No path from {self.pos} to {position}')
             action = self.move(C.DIRECTIONS.CENTER)
         elif len(new_path) == 1:
-            self.current_mission = ''
+            self.current_mission.pop()
             self.log('Already at desired position')
             action = self.move(C.DIRECTIONS.CENTER)
         else:
@@ -376,3 +396,6 @@ class MyUnit:
     def log(self, message):
         if self.logging:
             print(f'Unit {self.id}: {message}')
+
+    def __repr__(self):
+        return f'MyUnit({self.id})'

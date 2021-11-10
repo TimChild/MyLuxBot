@@ -17,32 +17,45 @@ class BasicAgent(Agent):
         self.cities: Dict[str, MyCity] = dict()
         self.game_state: MyState = None
 
-    def update_game_state(self, game: Game):
-        if self.game_state:
-            self.game_state.update(game)
-        else:
-            self.game_state = MyState(game, self.team)
+    # @property
+    # def units(self) -> Dict[str, MyUnit]:
+    #     return {k: unit for k, unit in self.game_state.all_units.items() if unit.team == self.team}
 
-    def update_units(self):
-        units = self.game_state.units
-        for unit_id in units:  # Add new units
+    def update_game_state(self, game: Game):
+        self.update_units(game)
+        self.update_cities(game)
+
+        if self.game_state:
+            # self.game_state.update(game)  # TODO: need to update with the units that Agent has
+            self.game_state.update(game, self.units, self.cities)
+        else:
+            self.game_state = MyState(game, self.units, self.cities, self.team)
+
+    def update_units(self, game: Game):
+        """Agent keeps track of all the units on the map (will have more info about own units throughout turn)"""
+        all_units = dict(**game.state["teamStates"][0]["units"], **game.state["teamStates"][1]["units"])
+        all_units = {k: MyUnit(v, v.team, self.game_state) for k, v in all_units.items()}
+        for unit_id in all_units:  # Add new units
             if unit_id not in self.units:
-                self.units[unit_id] = units[unit_id]
+                self.units[unit_id] = all_units[unit_id]
 
         for unit_id in list(self.units.keys()):  # Remove missing units
-            if unit_id not in units:
-                print(f'Unit lost?')
+            if unit_id not in all_units:
+                print(f'Unit lost? {unit_id}')  # Could be on the other team...
                 self.units.pop(unit_id)
 
-    def update_cities(self):
-        cities = self.game_state.cities
+    def update_cities(self, game: Game):
+        """Agent keeps track of all the cities on the map (will have more info about own cities throughout turn)"""
+        cities = game.cities
+        # cities = self.game_state.cities  # TODO: Should be updating from real Game here, not my game_state
         for city_id, city in cities.items():  # Add new units
             if city_id not in self.cities:
+                city = MyCity(city, city.team, self.game_state)
                 self.cities[city_id] = city
 
         for city_id in list(self.cities.keys()):  # Remove missing units
             if city_id not in cities:
-                print(f'City lost?')
+                print(f'City lost? {city_id}')  # Could be other team
                 self.cities.pop(city_id)
 
     def process_turn(self, game, team):
@@ -50,11 +63,9 @@ class BasicAgent(Agent):
         if team != self.team:
             raise Exception("ERROR: Asking for turn from wrong team")
         self.update_game_state(game)
-        self.update_units()
-        self.update_cities()
 
         actions = []
-        for unit in self.units.values():
+        for unit in self.game_state.units.values():
             if unit.can_act():
                 unit.update(self.game_state)
                 # if unit.id == 'u_1':
@@ -67,7 +78,7 @@ class BasicAgent(Agent):
                 if action:
                     actions.append(action)
 
-        for city in self.cities.values():
+        for city in self.game_state.cities.values():
             city.update(self.game_state)
             city_actions = city.self_action()
             if city_actions:
@@ -83,8 +94,8 @@ class BasicAgent(Agent):
 
 if __name__ == '__main__':
     from util.match_runner import get_game, get_actions, render, generate_replay
-
-    max_turns = 30
+    assert Position(1, 2) == Position(1, 2)
+    max_turns = 400
     #
     # # Create agent
     # agent1 = BasicAgent()

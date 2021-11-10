@@ -11,7 +11,7 @@ import numpy as np
 from itertools import product
 import random
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, TYPE_CHECKING
+from typing import List, Dict, Optional, TYPE_CHECKING, Set
 if TYPE_CHECKING:
     from component_classes import MyUnit, MyCity, MyState
 
@@ -68,7 +68,7 @@ def get_nearest_cell(pos: Position, game_state: Game, occupied_tiles: List[Posit
     return None
 
 
-def get_nearest_unoccupied_cell(pos: Position, game_state: Game, occupied_tiles: List[Position]) -> Optional[Cell]:
+def get_nearest_unoccupied_cell(pos: Position, game_state: Game, occupied_tiles: Set[Position]) -> Optional[Cell]:
     return get_nearest_cell(pos, game_state, occupied_tiles,
                             condition=lambda cell: not cell.city_tile and not cell.has_resource())
 #
@@ -212,7 +212,7 @@ def get_matrix_map(map: GameMap, all_cities: List[MyCity], all_units: List[MyUni
         if map.get_cell_by_pos(unit_pos).is_city_tile() and unit.team == team:
             pass  # Allowed to share city tile on same team
         else:
-            matrix_map[unit_pos.y, unit_pos.x] = 1  # Mark impassable
+            matrix_map[unit_pos.y, unit_pos.x] = 0  # Mark impassable
 
     return matrix_map
 
