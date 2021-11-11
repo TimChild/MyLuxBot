@@ -22,11 +22,11 @@ class BasicAgent(Agent):
     #     return {k: unit for k, unit in self.game_state.all_units.items() if unit.team == self.team}
 
     def update_game_state(self, game: Game):
+        """At the beginning of turn update info on units and cities and game state"""
         self.update_units(game)
         self.update_cities(game)
 
         if self.game_state:
-            # self.game_state.update(game)  # TODO: need to update with the units that Agent has
             self.game_state.update(game, self.units, self.cities)
         else:
             self.game_state = MyState(game, self.units, self.cities, self.team)
@@ -34,10 +34,9 @@ class BasicAgent(Agent):
     def update_units(self, game: Game):
         """Agent keeps track of all the units on the map (will have more info about own units throughout turn)"""
         all_units = dict(**game.state["teamStates"][0]["units"], **game.state["teamStates"][1]["units"])
-        all_units = {k: MyUnit(v, v.team, self.game_state) for k, v in all_units.items()}
         for unit_id in all_units:  # Add new units
             if unit_id not in self.units:
-                self.units[unit_id] = all_units[unit_id]
+                self.units[unit_id] = MyUnit(all_units[unit_id], all_units[unit_id].team, self.game_state)
 
         for unit_id in list(self.units.keys()):  # Remove missing units
             if unit_id not in all_units:
@@ -94,6 +93,7 @@ class BasicAgent(Agent):
 
 if __name__ == '__main__':
     from util.match_runner import get_game, get_actions, render, generate_replay
+    from luxai2021.env.agent import Agent
     assert Position(1, 2) == Position(1, 2)
     max_turns = 400
     #
@@ -117,5 +117,5 @@ if __name__ == '__main__':
     # render(game_inst)
     #
     agent1 = BasicAgent()
-    agent2 = BasicAgent()
-    generate_replay(agent1, agent2, max_turns=max_turns, replay_dir='../replays', seed=1)
+    agent2 = Agent()
+    json = generate_replay(agent1, agent2, max_turns=max_turns, replay_dir='../replays', seed=1)
