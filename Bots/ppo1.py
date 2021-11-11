@@ -1,12 +1,14 @@
 import numpy as np
 from gym import spaces
 from functools import partial
+import time
 
-from luxai2021.game.actions import MoveAction
+import luxai2021.game.actions as act
 
 from luxai2021.game.constants import Constants, Constants as C
 from luxai2021.env.agent import AgentWithModel
 from bot1 import BasicAgent
+from component_classes import MyUnit, MyCity, MyState
 
 
 class PpoAgent(BasicAgent, AgentWithModel):
@@ -23,24 +25,30 @@ class PpoAgent(BasicAgent, AgentWithModel):
         # They must be gym.spaces objects
         # Example when using discrete actions:
         self.actions_units = [
-            partial(MoveAction, direction=Constants.DIRECTIONS.CENTER),  # This is the do-nothing action
-            partial(MoveAction, direction=Constants.DIRECTIONS.NORTH),
-            partial(MoveAction, direction=Constants.DIRECTIONS.WEST),
-            partial(MoveAction, direction=Constants.DIRECTIONS.SOUTH),
-            partial(MoveAction, direction=Constants.DIRECTIONS.EAST),
-            partial(smart_transfer_to_nearby, target_type_restriction=Constants.UNIT_TYPES.CART), # Transfer to nearby cart
-            partial(smart_transfer_to_nearby, target_type_restriction=Constants.UNIT_TYPES.WORKER), # Transfer to nearby worker
-            SpawnCityAction,
-            PillageAction,
+            unit.move_to(),
+            unit.get_resources(),  # TODO: add location
+            unit.build_city(),  # TODO: add location
+
+            partial(act.MoveAction, direction=Constants.DIRECTIONS.CENTER),  # This is the do-nothing action
+
+            # TODO: smart_transfer_to_nearby does take a unit_id and unit, can I make it take MyUnit?
+            # partial(smart_transfer_to_nearby, target_type_restriction=Constants.UNIT_TYPES.CART), # Transfer to nearby cart
+            # partial(smart_transfer_to_nearby, target_type_restriction=Constants.UNIT_TYPES.WORKER), # Transfer to nearby worker
+            # SpawnCityAction,
+            # PillageAction,
         ]
         self.actions_cities = [
-            SpawnWorkerAction,
-            SpawnCartAction,
-            ResearchAction,
+            act.SpawnWorkerAction,
+            # SpawnCartAction,
+            act.ResearchAction,
         ]
         self.action_space = spaces.Discrete(max(len(self.actions_units), len(self.actions_cities)))
 
-    def get_observation(self, game, unit, city_tile, team, is_new_turn):
+        self.observation_shape = (3 + 7 * 5 * 2 + 1 + 1 + 1 + 2 + 2 + 2 + 3,)
+        self.observation_space = spaces.Box(low=0, high=1, shape=self.observation_shape, dtype=np.float16)
+        self.object_nodes = {}
+
+    def get_observation(self, game, unit: MyUnit, city_tile, team, is_new_turn):
         """
         Implements getting a observation from the current game for this unit or city
         """
@@ -49,6 +57,7 @@ class PpoAgent(BasicAgent, AgentWithModel):
             # It's a new turn this event. This flag is set True for only the first observation from each turn.
             # Update any per-turn fixed observation space that doesn't change per unit/city controlled.
 
+            # Update my GameState and units/cities based on actions executed last turn
             self.update_game_state(game)
 
             # Build a list of object nodes by type for quick distance-searches
@@ -68,35 +77,30 @@ class PpoAgent(BasicAgent, AgentWithModel):
                     )
 
             # Add your own and opponent units
-            for unit in self.units.values():
+            for unit in self.units.values():  # Includes both teams
+                key = str(unit.unit.type)  # I think because this might later include carts as well
+                if unit.team != team:
+                    key += "_opponent"
 
-            for t in [team, (team + 1) % 2]:
-                for u in game.state["teamStates"][team]["units"].values():
-                    key = str(u.type)
-                    if t != team:
-                        key = str(u.type) + "_opponent"
-
-                    if key not in self.object_nodes:
-                        self.object_nodes[key] = np.array([[u.pos.x, u.pos.y]])
-                    else:
-                        self.object_nodes[key] = np.concatenate(
-                            (
-                                self.object_nodes[key],
-                                [[u.pos.x, u.pos.y]]
-                            )
-                            , axis=0
+                if key not in self.object_nodes:
+                    self.object_nodes[key] = np.array([[unit.pos.x, unit.pos.y]])  # TODO: add current mission but maybe need to tokenize first?
+                else:
+                    self.object_nodes[key] = np.concatenate(
+                        (
+                            self.object_nodes[key],
+                            [[unit.pos.x, unit.pos.y]]
                         )
-                # TODO: Add other info that self.units have?
+                    )
 
             # Add your own and opponent cities
-            for city in game.cities.values():
-                for cells in city.city_cells:
+            for city in self.cities.values():
+                for cells in city.tiles:
                     key = "city"
                     if city.team != team:
-                        key = "city_opponent"
+                        key += "_opponent"
 
                     if key not in self.object_nodes:
-                        self.object_nodes[key] = np.array([[cells.pos.x, cells.pos.y]])
+                        self.object_nodes[key] = np.array([[cells.pos.x, cells.pos.y]])  # TODO: Add city fuel?
                     else:
                         self.object_nodes[key] = np.concatenate(
                             (
@@ -105,7 +109,6 @@ class PpoAgent(BasicAgent, AgentWithModel):
                             )
                             , axis=0
                         )
-                # TODO: Add other info that self.cities have?
 
         # Observation space: (Basic minimum for a miner agent)
         # Object:
@@ -479,3 +482,7 @@ class PpoAgent(BasicAgent, AgentWithModel):
 
         return actions
 
+if __name__ == '__main__':
+    from util.match_runner import get_game, get_actions, render, generate_replay
+    from luxai2021.env.agent import Agent
+    max_turns = 400

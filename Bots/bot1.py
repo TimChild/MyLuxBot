@@ -94,7 +94,6 @@ class BasicAgent(Agent):
 if __name__ == '__main__':
     from util.match_runner import get_game, get_actions, render, generate_replay
     from luxai2021.env.agent import Agent
-    assert Position(1, 2) == Position(1, 2)
     max_turns = 400
     #
     # # Create agent
