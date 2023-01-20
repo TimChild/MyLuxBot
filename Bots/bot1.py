@@ -5,14 +5,14 @@ from luxai2021.game.game import Game
 from luxai2021.env.agent import Agent
 from luxai2021.game.position import Position
 
-from Bots.component_classes import MyState, MyCity, MyUnit
+from component_classes import MyState, MyCity, MyUnit
 
 
 class BasicAgent(Agent):
     """Basic rule based Agent"""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.units: Dict[str, MyUnit] = dict()
         self.cities: Dict[str, MyCity] = dict()
         self.game_state: MyState = None
@@ -20,18 +20,37 @@ class BasicAgent(Agent):
     # @property
     # def units(self) -> Dict[str, MyUnit]:
     #     return {k: unit for k, unit in self.game_state.all_units.items() if unit.team == self.team}
+    def game_start(self, game: Game):
+        """
+        This function is called at the start of each game. Use this to
+        reset and initialize per game. Note that self.team may have
+        been changed since last game. The game map has been created
+        and starting units placed.
+
+        Args:
+            game ([type]): Game.
+        """
+        self.units = dict()
+        self.cities = dict()
+        self.game_state = None
+        self.update_game_state(game)
 
     def update_game_state(self, game: Game):
         """At the beginning of turn update info on units and cities and game state"""
-        self.update_units(game)
-        self.update_cities(game)
+        self.update_units_dict(game)
+        self.update_cities_dict(game)
 
         if self.game_state:
             self.game_state.update(game, self.units, self.cities)
         else:
             self.game_state = MyState(game, self.units, self.cities, self.team)
 
-    def update_units(self, game: Game):
+        for unit in self.game_state.units.values():  # Only same team
+            unit.update(self.game_state)
+        for city in self.game_state.cities.values():  # Only same team
+            city.update(self.game_state)
+
+    def update_units_dict(self, game: Game):
         """Agent keeps track of all the units on the map (will have more info about own units throughout turn)"""
         all_units = dict(**game.state["teamStates"][0]["units"], **game.state["teamStates"][1]["units"])
         for unit_id in all_units:  # Add new units
@@ -40,10 +59,10 @@ class BasicAgent(Agent):
 
         for unit_id in list(self.units.keys()):  # Remove missing units
             if unit_id not in all_units:
-                print(f'Unit lost? {unit_id}')  # Could be on the other team...
+                # print(f'Unit lost? {unit_id}')  # Could be on the other team...
                 self.units.pop(unit_id)
 
-    def update_cities(self, game: Game):
+    def update_cities_dict(self, game: Game):
         """Agent keeps track of all the cities on the map (will have more info about own cities throughout turn)"""
         cities = game.cities
         # cities = self.game_state.cities  # TODO: Should be updating from real Game here, not my game_state
@@ -54,7 +73,7 @@ class BasicAgent(Agent):
 
         for city_id in list(self.cities.keys()):  # Remove missing units
             if city_id not in cities:
-                print(f'City lost? {city_id}')  # Could be other team
+                # print(f'City lost? {city_id}')  # Could be other team
                 self.cities.pop(city_id)
 
     def process_turn(self, game, team):
@@ -66,7 +85,7 @@ class BasicAgent(Agent):
         actions = []
         for unit in self.game_state.units.values():
             if unit.can_act():
-                unit.update(self.game_state)
+                # unit.update(self.game_state)
                 # if unit.id == 'u_1':
                 #     action = unit.move_to(Position(2, 11))
                 # elif unit.id == 'u_2':
@@ -78,7 +97,7 @@ class BasicAgent(Agent):
                     actions.append(action)
 
         for city in self.game_state.cities.values():
-            city.update(self.game_state)
+            # city.update(self.game_state)
             city_actions = city.self_action()
             if city_actions:
                 actions.extend(city_actions)

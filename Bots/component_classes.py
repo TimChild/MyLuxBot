@@ -11,7 +11,7 @@ from luxai2021.game.game import Game
 from luxai2021.game.position import Position
 from luxai2021.game.unit import Unit
 
-from Bots import utility as util
+import utility as util
 
 
 Position.__repr__ = lambda self: f'Position({self.x}, {self.y})'
@@ -23,7 +23,7 @@ class MyState:
         self.team = team
         self.turn = 0
         self.night = 0
-        self.logging = True
+        self.logging = False
 
         self._occupied = set()
         self._cities = cities
@@ -122,7 +122,7 @@ class MyState:
 
     def log(self, message):
         if self.logging:
-            print(message)
+            print(f'MyState: {message}')
 
 
 class MyCity:
@@ -134,7 +134,7 @@ class MyCity:
         self.team = team
 
         self.previous_actions = deque(maxlen=3)
-        self.logging = True
+        self.logging = False
 
     def update(self, game_state: MyState):
         if self.team != game_state.team:
@@ -192,7 +192,7 @@ class MyUnit:
 
         self.current_mission = deque()  # Stores current intention of unit
         self.next_pos: Optional[Position] = None  # For storing destination if moving
-        self.logging = True
+        self.logging = False
 
         self._move_queue: Deque = deque()
         self._avoiding_cities = False
@@ -206,18 +206,22 @@ class MyUnit:
         self.next_pos = None
 
     def continue_mission(self) -> act.Action:
-        mission = self.current_mission[-1]
-        action = None
-        if mission == 'moving':
-            # self._move_queue.popleft
-            action = self.continue_move()
-        elif mission == 'build_city':
-            action = self.build_city()
+        if self.current_mission:
+            mission = self.current_mission[-1]
+            action = None
+            if mission == 'moving':
+                # self._move_queue.popleft
+                action = self.continue_move()
+            elif mission == 'build_city':
+                action = self.build_city()
+            else:
+                self.log(f'{mission} not understood')
+                self.current_mission.pop()
+                action = self.move(C.DIRECTIONS.CENTER)
+            return action
         else:
-            self.log(f'{mission} not understood')
-            self.current_mission.pop()
-            action = self.move(C.DIRECTIONS.CENTER)
-        return action
+            self.log('No mission to continue')
+            return self.move(C.DIRECTIONS.CENTER)
 
     def self_action(self):
         """Have unit decide what action to take"""
@@ -271,7 +275,7 @@ class MyUnit:
                 self.game_state.add_to_occupied(self.next_pos)
                 self.game_state.remove_from_occupied(self.pos)
         else:
-            print(f'Asked for invalid move: {direction}')
+            # print(f'Asked for invalid move: {direction}')
             action = act.MoveAction(self.unit.team, self.id, C.DIRECTIONS.CENTER)
         return self.do_action(action)
 

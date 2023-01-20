@@ -6,11 +6,8 @@ from luxai2021.game.unit import Unit
 from luxai2021.game.city import City, CityTile
 from luxai2021.game.position import Position
 
-import logging
 import numpy as np
 from itertools import product
-import random
-from dataclasses import dataclass, field
 from typing import List, Dict, Optional, TYPE_CHECKING, Set
 if TYPE_CHECKING:
     from component_classes import MyUnit, MyCity, MyState

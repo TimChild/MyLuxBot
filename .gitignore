@@ -1,3 +1,6 @@
+Bots/models/
+Bots/lux_tensorboard/
+Bots/logs*/
 *.idea
 log.txt
 *.json

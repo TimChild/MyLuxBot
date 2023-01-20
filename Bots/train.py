@@ -9,7 +9,6 @@ from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.utils import set_random_seed, get_schedule_fn
 from stable_baselines3.common.vec_env import SubprocVecEnv
 
-from ppo1 import PpoAgent
 from luxai2021.env.agent import Agent, AgentWithModel
 from luxai2021.env.lux_env import LuxEnvironment, SaveReplayAndModelCallback
 from luxai2021.game.constants import LuxMatchConfigs_Default
@@ -23,6 +22,7 @@ class MyLuxEnv(LuxEnvironment):
 
 class MyMatchController(MatchController):
     """This is what the PPO interacts with I think"""
+
     def take_action(self, action):
         # TODO: Replace the action_sequence stuff?
         pass
@@ -31,7 +31,7 @@ class MyMatchController(MatchController):
         # TODO: Work with MyUnits and MyCity objects instead
         # TODO: Where does this result get yielded to? It would be helpful to just pass my objects along if possible
         pass
-    
+
 
 # https://stable-baselines3.readthedocs.io/en/master/guide/examples.html?highlight=SubprocVecEnv#multiprocessing-unleashing-the-power-of-vectorized-environments
 def make_env(local_env, rank, seed=0):
@@ -63,9 +63,15 @@ def get_command_line_arguments():
     parser.add_argument('--gae_lambda', help='GAE Lambda', type=float, default=0.95)
     parser.add_argument('--batch_size', help='batch_size', type=int, default=2048)  # 64
     parser.add_argument('--step_count', help='Total number of steps to train', type=int, default=10000000)
-    parser.add_argument('--n_steps', help='Number of experiences to gather before each learning period', type=int, default=2048)
+    parser.add_argument('--n_steps', help='Number of experiences to gather before each learning period', type=int,
+                        default=2048)
     parser.add_argument('--path', help='Path to a checkpoint to load to resume training', type=str, default=None)
     parser.add_argument('--n_envs', help='Number of parallel environments to use in training', type=int, default=1)
+    # parser.add_argument('--n_envs', help='Number of parallel environments to use in training', type=int, default=6)
+
+    # My additions
+    parser.add_argument('--max_turns', help='Max number of turns in a game (defaults to 360)', type=int, default=360)
+
     args = parser.parse_args()
     return args
 
@@ -73,7 +79,10 @@ def get_command_line_arguments():
 def train(agent: type(AgentWithModel), args):
     """
     The main training loop
-    :param args: (ArgumentParser) The command line arguments
+
+    Args:
+        args (): (ArgumentParser) The command line arguments
+        agent ():
     """
     print(args)
 
@@ -96,7 +105,7 @@ def train(agent: type(AgentWithModel), args):
         env = SubprocVecEnv([make_env(LuxEnvironment(configs=configs,
                                                      learning_agent=agent(mode="train"),
                                                      opponent_agent=opponent), i) for i in range(args.n_envs)])
-    
+
     run_id = args.id
     print("Run id %s" % run_id)
 
@@ -121,40 +130,39 @@ def train(agent: type(AgentWithModel), args):
                     n_steps=args.n_steps
                     )
 
-    
-    
     callbacks = []
 
     # Save a checkpoint and 5 match replay files every 100K steps
     player_replay = agent(mode="inference", model=model)
     callbacks.append(
         SaveReplayAndModelCallback(
-                                save_freq=100000,
-                                save_path='./models/',
-                                name_prefix=f'model{run_id}',
-                                replay_env=LuxEnvironment(
-                                                configs=configs,
-                                                learning_agent=player_replay,
-                                                opponent_agent=Agent()
-                                ),
-                                replay_num_episodes=5
-                            )
+            save_freq=100000,
+            save_path='./models/',
+            name_prefix=f'model{run_id}',
+            replay_env=LuxEnvironment(
+                configs=configs,
+                learning_agent=player_replay,
+                opponent_agent=Agent()
+            ),
+            replay_num_episodes=5
+        )
     )
-    
+
     # Since reward metrics don't work for multi-environment setups, we add an evaluation logger
     # for metrics.
     if args.n_envs > 1:
         # An evaluation environment is needed to measure multi-env setups. Use a fixed 4 envs.
-        env_eval = SubprocVecEnv([make_env(LuxEnvironment(configs=configs,  # TODO: Need to get my MatchContoller in here
-                                                     learning_agent=agent(mode="train"),
-                                                     opponent_agent=opponent), i) for i in range(4)])
+        env_eval = SubprocVecEnv(
+            [make_env(LuxEnvironment(configs=configs,  # TODO: Need to get my MatchContoller in here
+                                     learning_agent=agent(mode="train"),
+                                     opponent_agent=opponent), i) for i in range(4)])
 
         callbacks.append(
             EvalCallback(env_eval, best_model_save_path=f'./logs_{run_id}/',
-                             log_path=f'./logs_{run_id}/',
-                             eval_freq=args.n_steps*2, # Run it every 2 training iterations
-                             n_eval_episodes=30, # Run 30 games
-                             deterministic=False, render=False)
+                         log_path=f'./logs_{run_id}/',
+                         eval_freq=args.n_steps * 2,  # Run it every 2 training iterations
+                         n_eval_episodes=30,  # Run 30 games
+                         deterministic=False, render=False)
         )
 
     print("Training model...")
@@ -170,7 +178,7 @@ def train(agent: type(AgentWithModel), args):
     latest_save = sorted(saves, key=lambda x: int(x.split('_')[-2]), reverse=True)[0]
     model.load(path=latest_save)
     obs = env.reset()
-    for i in range(600):
+    for i in range(360):
         action_code, _states = model.predict(obs, deterministic=True)
         obs, rewards, done, info = env.step(action_code)
         if i % 5 == 0:
@@ -204,17 +212,25 @@ def train(agent: type(AgentWithModel), args):
 
 
 if __name__ == "__main__":
-    if sys.version_info < (3,7) or sys.version_info >= (3,8):
+    from ppo_basic import PPOBasic
+
+    # from ppo1 import PpoAgent
+
+    if sys.version_info < (3, 7) or sys.version_info >= (3, 8):
         os.system("")
+
+
         class style():
             YELLOW = '\033[93m'
+
+
         version = str(sys.version_info.major) + "." + str(sys.version_info.minor)
         message = f'/!\ Warning, python{version} detected, you will need to use python3.7 to submit to kaggle.'
         message = style.YELLOW + message
         print(message)
-    
+
     # Get the command line arguments
     local_args = get_command_line_arguments()
 
     # Train the model
-    train(PpoAgent, local_args)
+    train(PPOBasic, local_args)
